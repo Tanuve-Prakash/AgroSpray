@@ -1,0 +1,13 @@
+# Raspberry Pi (64-bit OS recommended)
+numpy
+opencv-python-headless
+pyserial
+requests
+tflite-runtime      # lightweight inference; or install full tensorflow to use the .keras model
+# picamera2 comes from apt: sudo apt install -y python3-picamera2
+
+# Dashboard server (laptop or Pi): pip install -r backend/requirements.txt
+
+# Training machine only (laptop / Colab)
+# tensorflow
+# scikit-learn

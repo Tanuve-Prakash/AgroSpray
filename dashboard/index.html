@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgroSpray Dashboard</title>
+<style>
+  :root {
+    --bg: #f5f7f4; --card: #ffffff; --text: #1d2a1f; --muted: #66756a; --line: #dfe5df;
+    --green: #2e8b57; --yellow: #d9a400; --orange: #e07b00; --red: #cf3a2e; --grey: #8a948c; --blue: #4a7fb5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141a15; --card: #1d251f; --text: #e6ede7; --muted: #94a397; --line: #2c372e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+           gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--card); }
+  h1 { font-size: 20px; margin: 0; }
+  h1 span { color: var(--green); }
+  .meta { color: var(--muted); font-size: 13px; display: flex; gap: 14px; align-items: center; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--grey); display: inline-block; margin-right: 6px; }
+  .dot.live { background: var(--green); }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px; display: grid; gap: 16px; }
+  .alert { background: #fdecea; color: #8a1f17; border: 1px solid #f3b8b2; padding: 12px 16px;
+           border-radius: 10px; display: none; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .alert { background: #3a1a17; color: #ffb4ab; border-color: #6b2b25; } }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .kpi .v { font-size: 28px; font-weight: 700; }
+  .kpi .l { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .bar-row { display: grid; grid-template-columns: 90px 1fr 40px; gap: 8px; align-items: center; margin: 7px 0; font-size: 13px; }
+  .bar { height: 12px; background: var(--line); border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  svg.trend { width: 100%; height: 150px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  .pill { padding: 2px 9px; border-radius: 999px; color: #fff; font-size: 12px; font-weight: 600; }
+  .thumb { width: 54px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+  .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+  a { color: var(--blue); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agro<span>Spray</span> Dashboard</h1>
+  <div class="meta">
+    <span><i class="dot" id="dot"></i><span id="status">connecting...</span></span>
+    <span id="last"></span>
+    <a href="/api/export.csv">Download CSV</a>
+  </div>
+</header>
+
+<main>
+  <div class="alert" id="alert"></div>
+
+  <section class="kpis">
+    <div class="card kpi"><div class="v" id="k-stops">-</div><div class="l">Plants inspected</div></div>
+    <div class="card kpi"><div class="v" id="k-sprayed">-</div><div class="l">Sprayed</div></div>
+    <div class="card kpi"><div class="v" id="k-skipped">-</div><div class="l">Skipped (no spray)</div></div>
+    <div class="card kpi"><div class="v" id="k-saving">-</div><div class="l">Pump time saved vs max dose</div></div>
+    <div class="card kpi"><div class="v" id="k-pump">-</div><div class="l">Total pump time</div></div>
+    <div class="card kpi"><div class="v" id="k-damage">-</div><div class="l">Average damage</div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card"><h2>Leaf status</h2><div id="states"></div></div>
+    <div class="card"><h2>Damage % over the last 100 stops</h2><svg class="trend" id="trend" viewBox="0 0 400 150" preserveAspectRatio="none"></svg></div>
+  </section>
+
+  <section class="card">
+    <h2>By crop</h2>
+    <div class="scroll"><table><thead><tr><th>Crop</th><th>Stops</th><th>Avg damage</th><th>Pump time</th></tr></thead><tbody id="crops"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent stops</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Image</th><th>Time</th><th>Prediction</th><th>Damage</th><th>Status</th><th>Dose</th><th>Spray</th></tr></thead>
+      <tbody id="stops"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<script>
+const COLORS = { HEALTHY: "var(--green)", MILD: "var(--yellow)", MODERATE: "var(--orange)",
+                 SEVERE: "var(--red)", DEAD: "var(--grey)", NOLEAF: "var(--blue)" };
+const ORDER = ["HEALTHY", "MILD", "MODERATE", "SEVERE", "DEAD", "NOLEAF"];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const pill = s => `<span class="pill" style="background:${COLORS[s] || "var(--grey)"}">${esc(s)}</span>`;
+
+function renderSummary(s) {
+  $("k-stops").textContent = s.stops;
+  $("k-sprayed").textContent = s.sprayed;
+  $("k-skipped").textContent = s.skipped;
+  $("k-saving").textContent = s.saving_pct === null ? "-" : s.saving_pct + "%";
+  $("k-pump").textContent = s.pump_seconds + " s";
+  $("k-damage").textContent = s.avg_damage + "%";
+  $("last").textContent = s.last_ts ? "Last stop: " + s.last_ts : "No data yet";
+
+  const alert = $("alert");
+  if (s.recent_severe > 0) {
+    alert.style.display = "block";
+    alert.textContent = s.recent_severe + " severe leaf" + (s.recent_severe > 1 ? "ves" : "") +
+      " in the last 10 stops. Check this part of the field.";
+  } else { alert.style.display = "none"; }
+
+  const max = Math.max(1, ...Object.values(s.states));
+  $("states").innerHTML = ORDER.filter(k => s.states[k]).map(k =>
+    `<div class="bar-row"><span>${k}</span><div class="bar"><i style="width:${100 * s.states[k] / max}%;background:${COLORS[k]}"></i></div><b>${s.states[k]}</b></div>`
+  ).join("") || '<div class="empty">No data yet</div>';
+
+  const svg = $("trend");
+  if (s.trend.length > 1) {
+    const pts = s.trend.map((v, i) => `${(i / (s.trend.length - 1)) * 400},${145 - Math.min(v, 100) * 1.4}`).join(" ");
+    svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="var(--orange)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  } else { svg.innerHTML = ""; }
+
+  $("crops").innerHTML = s.crops.map(c =>
+    `<tr><td>${esc(c.crop)}</td><td>${c.stops}</td><td>${c.avg_damage}%</td><td>${c.pump_seconds} s</td></tr>`).join("") ||
+    '<tr><td colspan="4" class="empty">No data yet</td></tr>';
+}
+
+function renderStops(rows) {
+  $("stops").innerHTML = rows.map(r => `<tr>
+    <td>${r.image_url ? `<a href="${esc(r.image_url)}" target="_blank"><img class="thumb" src="${esc(r.image_url)}" alt="leaf"></a>` : ""}</td>
+    <td>${esc(r.ts)}</td>
+    <td>${esc(r.label || "model off")} ${r.label ? "(" + Math.round(r.conf * 100) + "%)" : ""}</td>
+    <td>${r.damage_pct.toFixed(1)}%</td>
+    <td>${pill(r.state)}</td>
+    <td>${r.dose_ml_l.toFixed(1)} ml/L</td>
+    <td>${r.spray_ms} ms</td></tr>`).join("") ||
+    '<tr><td colspan="7" class="empty">No stops yet. Start the robot with --server.</td></tr>';
+}
+
+async function refresh() {
+  try {
+    const [s, rows] = await Promise.all([
+      fetch("/api/summary").then(r => r.json()),
+      fetch("/api/stops?limit=30").then(r => r.json()),
+    ]);
+    renderSummary(s); renderStops(rows);
+    $("dot").className = "dot live"; $("status").textContent = "live";
+  } catch (e) {
+    $("dot").className = "dot"; $("status").textContent = "server unreachable";
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
